@@ -29,14 +29,15 @@ func NewServer() *Server {
 func (s *Server) Routes() *mux.Router {
 	router := s.router
 	ctx := context.Background()
-	router.HandleFunc("/", apiv1.HandleIndex()).Methods("GET")
-	router.HandleFunc("/containers", apiv1.HandleContainers(s.docker, ctx)).Methods("GET")
-	router.HandleFunc("/containers", apiv1.HandleContainerCreate(s.docker, ctx)).Methods("POST")
-	router.HandleFunc("/containers/{id}", apiv1.HandleContainer(s.docker, ctx)).Methods("GET")
-	//router.HandleFunc("/containers/{id}/start", apiv1.HandleContainerStart(s.docker)).Methods("POST")
-	//router.HandleFunc("/containers/{id}/stop", apiv1.HandleContainerStop(s.docker)).Methods("POST")
+
+	router.HandleFunc("/api/orchestrator", apiv1.HandleIndex()).Methods("GET")
+	router.HandleFunc("/api/orchestrator/containers", apiv1.HandleContainers(s.docker, ctx)).Methods("GET")
+	router.HandleFunc("/api/orchestrator/containers", apiv1.HandleContainerCreate(s.docker, ctx)).Methods("POST")
+	router.HandleFunc("/api/orchestrator/containers/{id}", apiv1.HandleContainer(s.docker, ctx)).Methods("GET")
+	router.HandleFunc("/api/orchestrator/containers/{id}/remove", apiv1.HandleContainerRemove(s.docker, ctx)).Methods("DELETE")
+	router.HandleFunc("/api/orchestrator/containers/{id}/start", apiv1.HandleContainerStart(s.docker, ctx)).Methods("POST")
+	router.HandleFunc("/api/orchestrator/containers/{id}/stop", apiv1.HandleContainerStop(s.docker, ctx)).Methods("POST")
 	//router.HandleFunc("/containers/{id}/restart", apiv1.HandleContainerRestart(s.docker)).Methods("POST")
-	//router.HandleFunc("/containers/{id}/remove", apiv1.HandleContainerRemove(s.docker)).Methods("POST")
 	//router.HandleFunc("/containers/{id}/logs", apiv1.HandleContainerLogs(s.docker)).Methods("GET")
 	//router.HandleFunc("/containers/{id}/exec", apiv1.HandleContainerExec(s.docker)).Methods("POST")
 	//router.HandleFunc("/images", apiv1.HandleImages(s.docker)).Methods("GET")
