@@ -2,6 +2,7 @@ package v1
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"github.com/afif1400/ucmdls/orchestrator/docker"
@@ -67,11 +68,11 @@ func HandleContainerCreate(d *docker.Docker, ctx context.Context) http.HandlerFu
 		newport, err := nats.NewPort("tcp", "4200")
 		// get container name from request body
 		var containerRequest struct {
-			Name string `json:"name"`
+			ContainerName string `json:"containerName"`
 		}
 
 		err = json.NewDecoder(r.Body).Decode(&containerRequest)
-		if containerRequest.Name == "" {
+		if containerRequest.ContainerName == "" {
 			json.NewEncoder(w).Encode(helpers.NewApiResponse(http.StatusBadRequest, "failure", "Container name is required"))
 			return
 		}
@@ -109,6 +110,7 @@ func HandleContainerCreate(d *docker.Docker, ctx context.Context) http.HandlerFu
 			"SIAB_PORT=4200",
 			"SIAB_PASSWORD=123123123",
 			"SIAB_SUDO=true",
+			"SIAB_SSL=true",
 		}
 		containerConfig := &container.Config{
 			Image:        "sspreitzer/shellinabox:latest",
@@ -122,7 +124,7 @@ func HandleContainerCreate(d *docker.Docker, ctx context.Context) http.HandlerFu
 			return
 		}
 
-		resp, err := d.Client.ContainerCreate(ctx, containerConfig, hostConfig, networkConfig, nil, containerRequest.Name)
+		resp, err := d.Client.ContainerCreate(ctx, containerConfig, hostConfig, networkConfig, nil, containerRequest.ContainerName)
 		if err != nil {
 			w.Write([]byte(err.Error()))
 			return
@@ -160,6 +162,7 @@ func HandleContainerStart(d *docker.Docker, ctx context.Context) http.HandlerFun
 				return
 			}
 		}()
+
 		wg.Wait()
 
 		// convert to json and write to response
@@ -210,5 +213,97 @@ func HandleContainerRemove(d *docker.Docker, ctx context.Context) http.HandlerFu
 		}
 
 		json.NewEncoder(w).Encode(helpers.NewApiResponse(http.StatusOK, "deleted container", nil))
+	}
+}
+
+// HandleContainerCommit function to commit a container
+func HandleContainerCommit(d *docker.Docker, ctx context.Context) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var commitRequest struct {
+			ContainerId string `json:"containerId"`
+			Repository  string `json:"repository"`
+			Tag         string `json:"tag"`
+		}
+
+		w.Header().Add("Transfer-Encoding", "chunked")
+		w.Header().Add("connection", "keep-alive")
+		w.Header().Add("X-Content-Type-Options", "nosniff")
+
+		err := json.NewDecoder(r.Body).Decode(&commitRequest)
+		if err != nil {
+			json.NewEncoder(w).Encode(helpers.NewApiResponse(http.StatusInternalServerError, "failure", err.Error()))
+			return
+		}
+
+		// validate the request
+		if commitRequest.ContainerId == "" {
+			json.NewEncoder(w).Encode(helpers.NewApiResponse(http.StatusBadRequest, "failure", "container id is required"))
+			return
+		}
+
+		if commitRequest.Repository == "" {
+			json.NewEncoder(w).Encode(helpers.NewApiResponse(http.StatusBadRequest, "failure", "repository is required"))
+			return
+		}
+
+		if commitRequest.Tag == "" {
+			json.NewEncoder(w).Encode(helpers.NewApiResponse(http.StatusBadRequest, "failure", "tag is required"))
+			return
+		}
+
+		commitResponse, err := d.Client.ContainerCommit(ctx, commitRequest.ContainerId, types.ContainerCommitOptions{
+			Reference: commitRequest.Repository + ":" + commitRequest.Tag,
+		})
+
+		if err != nil {
+			json.NewEncoder(w).Encode(helpers.NewApiResponse(http.StatusInternalServerError, "failure", err.Error()))
+			return
+		}
+
+		json.NewEncoder(w).Encode(helpers.NewApiResponse(http.StatusOK, "committed container", commitResponse))
+
+		authConfig := types.AuthConfig{
+			Username: "afif1400",
+			Password: "iball@123123",
+			//ServerAddress: "",
+			//IdentityToken: "",
+			//RegistryToken: "",
+		}
+
+		encodedJSON, err := json.Marshal(authConfig)
+		if err != nil {
+			json.NewEncoder(w).Encode(helpers.NewApiResponse(http.StatusInternalServerError, "failure", err.Error()))
+			return
+		}
+
+		authStr := base64.URLEncoding.EncodeToString(encodedJSON)
+
+		// push the committed container to the registry if it is a private registry
+		_, err = d.Client.ImagePush(ctx, commitRequest.Repository+":"+commitRequest.Tag, types.ImagePushOptions{
+			RegistryAuth: authStr,
+		})
+		if err != nil {
+			json.NewEncoder(w).Encode(helpers.NewApiResponse(http.StatusInternalServerError, "failure", err.Error()))
+			return
+		}
+
+		//p := make([]byte, 10)
+		// send chunked data over a http connection
+
+		//for {
+		//	n, err := reader.Read(p)
+		//	if err == io.EOF {
+		//		break
+		//	}
+		//	if err != nil {
+		//		json.NewEncoder(w).Encode(helpers.NewApiResponse(http.StatusInternalServerError, "failure", err.Error()))
+		//		return
+		//	}
+		//
+		//	io.Copy(w, bytes.NewReader(p[:n]))
+		//	w.(http.Flusher).Flush()
+		//}
+
+		json.NewEncoder(w).Encode(helpers.NewApiResponse(http.StatusOK, "pushed image", nil))
 	}
 }
